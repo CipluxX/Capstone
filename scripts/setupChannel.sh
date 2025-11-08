@@ -20,6 +20,21 @@ check_success() {
   fi
 }
 
+# === Fungsi Cek Peer Sudah Join ===
+check_peer_joined() {
+  ORG=$1
+  PORT=$2
+  MSP=$3
+
+  CHANNELS=$(docker exec -e CORE_PEER_LOCALMSPID="$MSP" \
+              -e CORE_PEER_MSPCONFIGPATH="/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/$ORG.example.com/users/Admin@$ORG.example.com/msp" \
+              -e CORE_PEER_ADDRESS="peer0.$ORG.example.com:$PORT" \
+              -e CORE_PEER_TLS_ROOTCERT_FILE="/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/$ORG.example.com/peers/peer0.$ORG.example.com/tls/ca.crt" \
+              cli peer channel list)
+
+  echo "$CHANNELS" | grep -q "$CHANNEL_NAME"
+}
+
 # === Fungsi Join Peer ===
 join_peer() {
   ORG=$1
@@ -28,13 +43,16 @@ join_peer() {
 
   echo "➡️ Peer $ORG join channel..."
 
-  docker exec -e CORE_PEER_LOCALMSPID="$MSP" \
-              -e CORE_PEER_MSPCONFIGPATH="/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/$ORG.example.com/users/Admin@$ORG.example.com/msp" \
-              -e CORE_PEER_ADDRESS="peer0.$ORG.example.com:$PORT" \
-              -e CORE_PEER_TLS_ROOTCERT_FILE="/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/$ORG.example.com/peers/peer0.$ORG.example.com/tls/ca.crt" \
-              cli peer channel join -b ./channel-artifacts/$CHANNEL_NAME.block
-
-  check_success "Peer $ORG join channel"
+  if check_peer_joined "$ORG" "$PORT" "$MSP"; then
+    echo "ℹ️ Peer $ORG sudah join channel, skip"
+  else
+    docker exec -e CORE_PEER_LOCALMSPID="$MSP" \
+                -e CORE_PEER_MSPCONFIGPATH="/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/$ORG.example.com/users/Admin@$ORG.example.com/msp" \
+                -e CORE_PEER_ADDRESS="peer0.$ORG.example.com:$PORT" \
+                -e CORE_PEER_TLS_ROOTCERT_FILE="/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/$ORG.example.com/peers/peer0.$ORG.example.com/tls/ca.crt" \
+                cli peer channel join -b ./channel-artifacts/$CHANNEL_NAME.block
+    check_success "Peer $ORG join channel"
+  fi
 }
 
 # === Validasi File channel.tx dan genesis.block ===
@@ -55,15 +73,19 @@ if [ ! -f ./channel-artifacts/orderer.genesis.block ]; then
 fi
 
 # === 1. Membuat Channel ===
-echo "🛠️ Membuat channel $CHANNEL_NAME..."
-docker exec cli peer channel create \
-  -o orderer.example.com:7050 \
-  --ordererTLSHostnameOverride orderer.example.com \
-  -c $CHANNEL_NAME \
-  -f ./channel-artifacts/channel.tx \
-  --outputBlock ./channel-artifacts/$CHANNEL_NAME.block \
-  --tls --cafile $ORDERER_CA
-check_success "Channel creation"
+if [ ! -f ./channel-artifacts/$CHANNEL_NAME.block ]; then
+  echo "🛠️ Membuat channel $CHANNEL_NAME..."
+  docker exec cli peer channel create \
+    -o orderer.example.com:7050 \
+    --ordererTLSHostnameOverride orderer.example.com \
+    -c $CHANNEL_NAME \
+    -f ./channel-artifacts/channel.tx \
+    --outputBlock ./channel-artifacts/$CHANNEL_NAME.block \
+    --tls --cafile $ORDERER_CA
+  check_success "Channel creation"
+else
+  echo "ℹ️ Channel block sudah ada, skip pembuatan channel"
+fi
 
 # === 2. Join Semua Peer ===
 join_peer "klinik" 7051 "KlinikMSP"
