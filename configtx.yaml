@@ -1,0 +1,166 @@
+Organizations:
+  - &OrdererOrg
+    Name: OrdererOrg
+    ID: OrdererMSP
+    MSPDir: crypto-config/ordererOrganizations/example.com/msp
+    Policies:
+      Readers:
+        Type: Signature
+        Rule: "OR('OrdererMSP.member')"
+      Writers:
+        Type: Signature
+        Rule: "OR('OrdererMSP.member')"
+      Admins:
+        Type: Signature
+        Rule: "OR('OrdererMSP.admin')"
+
+  - &Klinik
+    Name: KlinikMSP
+    ID: KlinikMSP
+    MSPDir: crypto-config/peerOrganizations/klinik.example.com/msp
+    Policies:
+      Readers:
+        Type: Signature
+        Rule: "OR('KlinikMSP.admin', 'KlinikMSP.peer', 'KlinikMSP.client')"
+      Writers:
+        Type: Signature
+        Rule: "OR('KlinikMSP.admin', 'KlinikMSP.client')"
+      Admins:
+        Type: Signature
+        Rule: "OR('KlinikMSP.admin')"
+    AnchorPeers:
+      - Host: peer0.klinik.example.com
+        Port: 7051
+
+  - &Akademik
+    Name: AkademikMSP
+    ID: AkademikMSP
+    MSPDir: crypto-config/peerOrganizations/akademik.example.com/msp
+    Policies:
+      Readers:
+        Type: Signature
+        Rule: "OR('AkademikMSP.admin', 'AkademikMSP.peer', 'AkademikMSP.client')"
+      Writers:
+        Type: Signature
+        Rule: "OR('AkademikMSP.admin', 'AkademikMSP.client')"
+      Admins:
+        Type: Signature
+        Rule: "OR('AkademikMSP.admin')"
+    AnchorPeers:
+      - Host: peer0.akademik.example.com
+        Port: 9051
+
+  - &Mahasiswa
+    Name: MahasiswaMSP
+    ID: MahasiswaMSP
+    MSPDir: crypto-config/peerOrganizations/mahasiswa.example.com/msp
+    Policies:
+      Readers:
+        Type: Signature
+        Rule: "OR('MahasiswaMSP.admin', 'MahasiswaMSP.peer', 'MahasiswaMSP.client')"
+      Writers:
+        Type: Signature
+        Rule: "OR('MahasiswaMSP.admin', 'MahasiswaMSP.client')"
+      Admins:
+        Type: Signature
+        Rule: "OR('MahasiswaMSP.admin')"
+    AnchorPeers:
+      - Host: peer0.mahasiswa.example.com
+        Port: 8051
+
+Capabilities:
+  Channel: &ChannelCapabilities
+    V2_0: true
+  Orderer: &OrdererCapabilities
+    V2_0: true
+  Application: &ApplicationCapabilities
+    V2_0: true
+
+Application: &ApplicationDefaults
+  Organizations:
+  Policies:
+    Readers:
+      Type: ImplicitMeta
+      Rule: "ANY Readers"
+    Writers:
+      Type: ImplicitMeta
+      Rule: "ANY Writers"
+    Admins:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Admins"
+  Capabilities:
+    <<: *ApplicationCapabilities
+
+Orderer: &OrdererDefaults
+  OrdererType: etcdraft
+  Addresses:
+    - orderer.example.com:7050
+  EtcdRaft:
+    Consenters:
+      - Host: orderer.example.com
+        Port: 7050
+        ClientTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+        ServerTLSCert: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+  BatchTimeout: 2s
+  BatchSize:
+    MaxMessageCount: 10
+    AbsoluteMaxBytes: 99 MB
+    PreferredMaxBytes: 512 KB
+  Organizations:
+  Policies:
+    Readers:
+      Type: ImplicitMeta
+      Rule: "ANY Readers"
+    Writers:
+      Type: ImplicitMeta
+      Rule: "ANY Writers"
+    Admins:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Admins"
+    BlockValidation:
+      Type: ImplicitMeta
+      Rule: "ANY Writers"
+  Capabilities:
+    <<: *OrdererCapabilities
+
+Channel: &ChannelDefaults
+  Policies:
+    Readers:
+      Type: ImplicitMeta
+      Rule: "ANY Readers"
+    Writers:
+      Type: ImplicitMeta
+      Rule: "ANY Writers"
+    Admins:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Admins"
+  Capabilities:
+    <<: *ChannelCapabilities
+
+Profiles:
+  ThreeOrgsOrdererGenesis:
+    <<: *ChannelDefaults
+    Orderer:
+      <<: *OrdererDefaults
+      Organizations:
+        - *OrdererOrg
+      Capabilities:
+        <<: *OrdererCapabilities
+    Consortiums:
+      SampleConsortium:
+        Organizations:
+          - *Klinik
+          - *Akademik
+          - *Mahasiswa
+
+  ThreeOrgsChannel:
+    <<: *ChannelDefaults
+    Consortium: SampleConsortium
+    Application:
+      <<: *ApplicationDefaults
+      Organizations:
+        - *Klinik
+        - *Akademik
+        - *Mahasiswa
+      Capabilities:
+        <<: *ApplicationCapabilities
