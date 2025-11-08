@@ -1,65 +1,73 @@
 #!/bin/bash
-
 set -e
 
 echo "=== SETUP CHANNEL DAN JOIN PEERS ==="
 
-# Export environment variables
-export PATH=~/Documents/Capstone-Project/fabric-samples/bin:$PATH
-export FABRIC_CFG_PATH=~/Documents/Capstone-Project
+# === Konfigurasi Umum ===
+CHANNEL_NAME="sick-letter-channel"
+FABRIC_CFG_PATH=~/Documents/Capstone-Project
+BIN_PATH=~/Documents/Capstone-Project/fabric-samples/bin
+ORDERER_CA=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/ordererOrganizations/example.com/orderers/orderer.example.com/msp/tlscacerts/tlsca.example.com-cert.pem
 
-# Set environment for each org
-export CORE_PEER_LOCALMSPID="KlinikMSP"
-export CORE_PEER_TLS_ENABLED=true
-export CORE_PEER_MSPCONFIGPATH=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/klinik.example.com/users/Admin@klinik.example.com/msp
-export CORE_PEER_ADDRESS=peer0.klinik.example.com:7051
-export CORE_PEER_TLS_ROOTCERT_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/klinik.example.com/peers/peer0.klinik.example.com/tls/ca.crt
-export ORDERER_CA=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/ordererOrganizations/example.com/orderers/orderer.example.com/msp/tlscacerts/tlsca.example.com-cert.pem
+export PATH=$BIN_PATH:$PATH
+export FABRIC_CFG_PATH=$FABRIC_CFG_PATH
 
-# Function untuk check command success
+# === Fungsi Validasi ===
 check_success() {
-    if [ $? -ne 0 ]; then
-        echo "ERROR: $1 failed"
-        exit 1
-    fi
+  if [ $? -ne 0 ]; then
+    echo "❌ ERROR: $1 gagal"
+    exit 1
+  fi
 }
 
-# Wait for orderer to be ready
-echo "Menunggu orderer siap..."
-sleep 10
+# === Fungsi Join Peer ===
+join_peer() {
+  ORG=$1
+  PORT=$2
+  MSP=$3
 
-# 1. Create channel
-echo "1. Membuat channel sick-letter-channel..."
-docker exec cli peer channel create -o orderer.example.com:7050 -c sick-letter-channel \
-    --file ./channel-artifacts/channel.tx \
-    --tls --cafile $ORDERER_CA \
-    --outputBlock sick-letter-channel.block
+  echo "➡️ Peer $ORG join channel..."
+
+  docker exec -e CORE_PEER_LOCALMSPID="$MSP" \
+              -e CORE_PEER_MSPCONFIGPATH="/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/$ORG.example.com/users/Admin@$ORG.example.com/msp" \
+              -e CORE_PEER_ADDRESS="peer0.$ORG.example.com:$PORT" \
+              -e CORE_PEER_TLS_ROOTCERT_FILE="/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/$ORG.example.com/peers/peer0.$ORG.example.com/tls/ca.crt" \
+              cli peer channel join -b ./channel-artifacts/$CHANNEL_NAME.block
+
+  check_success "Peer $ORG join channel"
+}
+
+# === Validasi File channel.tx dan genesis.block ===
+if [ ! -f ./channel-artifacts/channel.tx ]; then
+  echo "⚠️ File channel.tx tidak ditemukan. Membuat ulang..."
+  configtxgen -profile ThreeOrgsChannel \
+    -outputCreateChannelTx ./channel-artifacts/channel.tx \
+    -channelID $CHANNEL_NAME
+  check_success "Generate channel.tx"
+fi
+
+if [ ! -f ./channel-artifacts/orderer.genesis.block ]; then
+  echo "⚠️ File orderer.genesis.block tidak ditemukan. Membuat ulang..."
+  configtxgen -profile ThreeOrgsOrdererGenesis \
+    -channelID system-channel \
+    -outputBlock ./channel-artifacts/orderer.genesis.block
+  check_success "Generate orderer.genesis.block"
+fi
+
+# === 1. Membuat Channel ===
+echo "🛠️ Membuat channel $CHANNEL_NAME..."
+docker exec cli peer channel create \
+  -o orderer.example.com:7050 \
+  --ordererTLSHostnameOverride orderer.example.com \
+  -c $CHANNEL_NAME \
+  -f ./channel-artifacts/channel.tx \
+  --outputBlock ./channel-artifacts/$CHANNEL_NAME.block \
+  --tls --cafile $ORDERER_CA
 check_success "Channel creation"
 
-# 2. Peer Klinik join channel
-echo "2. Peer Klinik join channel..."
-docker exec cli peer channel join -b sick-letter-channel.block
-check_success "Peer Klinik join channel"
+# === 2. Join Semua Peer ===
+join_peer "klinik" 7051 "KlinikMSP"
+join_peer "akademik" 9051 "AkademikMSP"
+join_peer "mahasiswa" 8051 "MahasiswaMSP"
 
-# 3. Peer Akademik join channel  
-echo "3. Peer Akademik join channel..."
-export CORE_PEER_LOCALMSPID="AkademikMSP"
-export CORE_PEER_MSPCONFIGPATH=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/akademik.example.com/users/Admin@akademik.example.com/msp
-export CORE_PEER_ADDRESS=peer0.akademik.example.com:9051
-export CORE_PEER_TLS_ROOTCERT_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/akademik.example.com/peers/peer0.akademik.example.com/tls/ca.crt
-
-docker exec cli peer channel join -b sick-letter-channel.block
-check_success "Peer Akademik join channel"
-
-# 4. Peer Mahasiswa join channel
-echo "4. Peer Mahasiswa join channel..."
-export CORE_PEER_LOCALMSPID="MahasiswaMSP"
-export CORE_PEER_MSPCONFIGPATH=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/mahasiswa.example.com/users/Admin@mahasiswa.example.com/msp
-export CORE_PEER_ADDRESS=peer0.mahasiswa.example.com:8051
-export CORE_PEER_TLS_ROOTCERT_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/mahasiswa.example.com/peers/peer0.mahasiswa.example.com/tls/ca.crt
-
-docker exec cli peer channel join -b sick-letter-channel.block
-check_success "Peer Mahasiswa join channel"
-
-echo "=== CHANNEL SETUP BERHASIL ==="
-echo "Channel 'sick-letter-channel' berhasil dibuat dan semua peers telah join"
+echo "✅ Semua peer berhasil join channel '$CHANNEL_NAME'"
